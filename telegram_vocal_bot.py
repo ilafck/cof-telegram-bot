@@ -1,5 +1,5 @@
 import os
-import openai
+from openai import OpenAI
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
@@ -11,11 +11,11 @@ AUDIO_FOLDER = os.path.join(os.getcwd(), "vocaux/")
 AFFILIATE_LINK_1 = "https://partners.raisefx.com/visit/?bta=163220&brand=raisefx"
 AFFILIATE_LINK_2 = "https://go.fxcess.com/visit/?bta=35772&brand=fxcess"
 
-openai.api_key = OPENAI_API_KEY
+client = OpenAI(api_key=OPENAI_API_KEY)
 
-# Fonction pour interroger ChatGPT (version GPT-3.5-turbo)
+# Fonction mise à jour pour OpenAI >= 1.0.0
 async def chatgpt_response(prompt):
-    response = openai.ChatCompletion.create(
+    response = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
             {"role": "system", "content": "Tu es un assistant expert en trading, spécialisé en brokers, création de comptes, utilisation de MetaTrader 4 et 5, et explications des bases du trading."},
