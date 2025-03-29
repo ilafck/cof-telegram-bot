@@ -14,7 +14,17 @@ AFFILIATE_LINK_2 = "https://go.fxcess.com/visit/?bta=35772&brand=fxcess"
 
 # Configuration ChromaDB
 client_db = chromadb.PersistentClient(path="./data_db")
-collection = client_db.get_collection("erwin_trading")
+from chromadb.utils import embedding_functions
+
+collection_name = "erwin_trading"
+try:
+    collection = client_db.get_collection(collection_name)
+except ValueError:
+    collection = client_db.create_collection(
+        name=collection_name,
+        embedding_function=embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
+    )
+
 model = SentenceTransformer('all-MiniLM-L6-v2')
 
 # Fonction pour récupérer le contexte pertinent
