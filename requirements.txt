@@ -1,1 +1,2 @@
 python-telegram-bot[webhooks]==20.6
+openai==1.14.3
