@@ -1,11 +1,11 @@
-from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 import os
 import openai
+from telegram import Update, ReplyKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-# Clés API
-TOKEN = "7693055035:AAGZBIDFAsRA0WfFpoBUiF3moCj5nuJlcBw"
-OPENAI_API_KEY = "TON_TOKEN_OPENAI"  # <-- Remplace avec ta clé OpenAI
+# Utilisation de variables d'environnement pour sécuriser les clés API
+TOKEN = os.environ.get("TELEGRAM_TOKEN")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
 AUDIO_FOLDER = os.path.join(os.getcwd(), "vocaux/")
 AFFILIATE_LINK_1 = "https://partners.raisefx.com/visit/?bta=163220&brand=raisefx"
