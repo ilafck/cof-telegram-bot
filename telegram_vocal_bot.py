@@ -1,28 +1,53 @@
 import os
-from openai import OpenAI
+import requests
+import chromadb
+from sentence_transformers import SentenceTransformer
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-# Utilisation de variables d'environnement pour sécuriser les clés API
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY")
 
 AUDIO_FOLDER = os.path.join(os.getcwd(), "vocaux/")
 AFFILIATE_LINK_1 = "https://partners.raisefx.com/visit/?bta=163220&brand=raisefx"
 AFFILIATE_LINK_2 = "https://go.fxcess.com/visit/?bta=35772&brand=fxcess"
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+# Configuration ChromaDB
+client_db = chromadb.PersistentClient(path="./data_db")
+collection = client_db.get_collection("erwin_trading")
+model = SentenceTransformer('all-MiniLM-L6-v2')
 
-# Fonction mise à jour pour OpenAI >= 1.0.0
-async def chatgpt_response(prompt):
-    response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[
-            {"role": "system", "content": "Tu es un assistant expert en trading, spécialisé en brokers, création de comptes, utilisation de MetaTrader 4 et 5, et explications des bases du trading."},
-            {"role": "user", "content": prompt},
+# Fonction pour récupérer le contexte pertinent
+def get_context(query):
+    query_embedding = model.encode([query]).tolist()[0]
+    results = collection.query(query_embeddings=[query_embedding], n_results=3)
+    return " ".join(results["documents"][0])
+
+# Fonction DeepSeek intégrée
+async def deepseek_response(prompt):
+    headers = {
+        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    contexte_erwin = get_context(prompt)
+
+    system_prompt = f"""
+    Tu es un assistant trading institutionnel pour Erwin COF. Utilise ce contexte précis pour répondre clairement avec un ton convivial, engageant et direct :
+    {contexte_erwin}
+    """
+
+    data = {
+        "model": "deepseek-chat",
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}
         ]
-    )
-    return response.choices[0].message.content
+    }
+
+    response = requests.post("https://api.deepseek.com/chat/completions", headers=headers, json=data)
+    response.raise_for_status()
+    return response.json()['choices'][0]['message']['content']
 
 # Commande /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -33,11 +58,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except FileNotFoundError:
         await update.message.reply_text("Erreur : intro.ogg non trouvé.")
         return
+
     keyboard = [["🔗 Lien RaiseFX", "🔗 Lien FXCess"], ["🔓 Accéder au VIP"]]
     reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
     await update.message.reply_text("Choisis une option ou pose-moi une question trading :", reply_markup=reply_markup)
 
-# Gestion des messages et réponses ChatGPT
+# Gestion des messages
 async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.lower()
     chat_id = update.effective_chat.id
@@ -55,8 +81,8 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_text = "Envoie ta preuve ici pour débloquer l’accès selon ton dépôt."
 
     else:
-        # ChatGPT prend le relais pour les questions non reconnues
-        response = await chatgpt_response(text)
+        # DeepSeek avec datas personnalisées
+        response = await deepseek_response(text)
         await update.message.reply_text(response)
         return
 
@@ -82,7 +108,7 @@ def main():
         webhook_url=f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME')}/{TOKEN}"
     )
 
-    print("Bot lancé avec ChatGPT-3.5 ✅")
+    print("Bot lancé avec DeepSeek et datas personnalisées ✅")
 
 if __name__ == '__main__':
     main()
