@@ -1,8 +1,8 @@
 import os
 import requests
 import chromadb
-from InstructorEmbedding import INSTRUCTOR
-from telegram import Update, ReplyKeyboardMarkup
+from sentence_transformers import SentenceTransformer
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -22,30 +22,31 @@ try:
 except ValueError:
     collection = client_db.create_collection(
         name=collection_name,
-        embedding_function=embedding_functions.InstructorEmbeddingFunction(
-            model_name="hkunlp/instructor-base",
-            instruction="Représente le texte pour la recherche d'information"
-        )
+        embedding_function=embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
     )
 
-model = INSTRUCTOR('hkunlp/instructor-base')
+model = SentenceTransformer('all-MiniLM-L6-v2')
 
-# Fonction contextuelle DeepSeek avec base Chroma allégée
 def get_context(query):
-    query_embedding = model.encode([["Représente le texte pour la recherche d'information", query]])[0]
-    results = collection.query(query_embeddings=[query_embedding], n_results=2)
-    return " ".join(results["documents"][0])
+    try:
+        query_embedding = model.encode([query]).tolist()[0]
+        results = collection.query(query_embeddings=[query_embedding], n_results=3)
+        return " ".join(results["documents"][0])
+    except Exception:
+        return ""
 
 async def deepseek_response(prompt):
     headers = {
         "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
         "Content-Type": "application/json"
     }
+
     contexte_erwin = get_context(prompt)
     system_prompt = f"""
     Tu es un assistant trading institutionnel pour Erwin COF. Utilise ce contexte précis pour répondre clairement avec un ton convivial, engageant et direct :
     {contexte_erwin}
     """
+
     data = {
         "model": "deepseek-chat",
         "messages": [
@@ -53,7 +54,8 @@ async def deepseek_response(prompt):
             {"role": "user", "content": prompt}
         ]
     }
-    response = requests.post("https://api.deepseek.com/chat/completions", headers=headers, json=data, timeout=10)
+
+    response = requests.post("https://api.deepseek.com/chat/completions", headers=headers, json=data)
     response.raise_for_status()
     return response.json()['choices'][0]['message']['content']
 
@@ -65,6 +67,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except FileNotFoundError:
         await update.message.reply_text("Erreur : intro.ogg non trouvé.")
         return
+
     keyboard = [
         ["🔗 Lien RaiseFX", "🔗 Lien FXCess"],
         ["💸 VIP Forex", "💰 VIP Crypto"],
@@ -102,7 +105,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             response = await deepseek_response(text)
             await update.message.reply_text(response)
         except Exception as e:
-            await update.message.reply_text("Une erreur est survenue. Réessaie dans quelques instants.")
+            await update.message.reply_text("Une erreur est survenue lors de la génération de la réponse.")
         return
 
     try:
