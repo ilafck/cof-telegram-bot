@@ -1,8 +1,6 @@
 python-telegram-bot[webhooks]==20.6
-torch==2.1.2
+openai==1.14.3
 chromadb==0.5.0
-InstructorEmbedding
-sentence-transformers==2.2.2
-huggingface_hub==0.14.1
+sentence-transformers
 requests
 numpy<2.0.0

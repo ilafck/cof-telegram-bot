@@ -2,7 +2,7 @@ import os
 import requests
 import chromadb
 from sentence_transformers import SentenceTransformer
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
+from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -11,8 +11,8 @@ DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY")
 AUDIO_FOLDER = os.path.join(os.getcwd(), "vocaux/")
 AFFILIATE_LINK_1 = "https://partners.raisefx.com/visit/?bta=163220&brand=raisefx"
 AFFILIATE_LINK_2 = "https://go.fxcess.com/visit/?bta=35772&brand=fxcess"
-KUCOIN_LINK = "https://www.kucoin.com/r/af/rP6K1J3"
 
+# Configuration ChromaDB
 client_db = chromadb.PersistentClient(path="./data_db")
 from chromadb.utils import embedding_functions
 
@@ -27,14 +27,13 @@ except ValueError:
 
 model = SentenceTransformer('all-MiniLM-L6-v2')
 
+# Fonction pour récupérer le contexte pertinent
 def get_context(query):
-    try:
-        query_embedding = model.encode([query]).tolist()[0]
-        results = collection.query(query_embeddings=[query_embedding], n_results=3)
-        return " ".join(results["documents"][0])
-    except Exception:
-        return ""
+    query_embedding = model.encode([query]).tolist()[0]
+    results = collection.query(query_embeddings=[query_embedding], n_results=3)
+    return " ".join(results["documents"][0])
 
+# Fonction DeepSeek intégrée
 async def deepseek_response(prompt):
     headers = {
         "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
@@ -42,6 +41,7 @@ async def deepseek_response(prompt):
     }
 
     contexte_erwin = get_context(prompt)
+
     system_prompt = f"""
     Tu es un assistant trading institutionnel pour Erwin COF. Utilise ce contexte précis pour répondre clairement avec un ton convivial, engageant et direct :
     {contexte_erwin}
@@ -59,23 +59,21 @@ async def deepseek_response(prompt):
     response.raise_for_status()
     return response.json()['choices'][0]['message']['content']
 
+# Commande /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     try:
-        audio = open(os.path.join(AUDIO_FOLDER, "intro.ogg"), "rb")
+        audio = open(AUDIO_FOLDER + "intro.ogg", "rb")
         await context.bot.send_voice(chat_id=chat_id, voice=audio)
     except FileNotFoundError:
         await update.message.reply_text("Erreur : intro.ogg non trouvé.")
         return
 
-    keyboard = [
-        ["🔗 Lien RaiseFX", "🔗 Lien FXCess"],
-        ["💸 VIP Forex", "💰 VIP Crypto"],
-        ["📤 J’ai fait mon dépôt"]
-    ]
-    reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=False, resize_keyboard=True)
+    keyboard = [["🔗 Lien RaiseFX", "🔗 Lien FXCess"], ["🔓 Accéder au VIP"]]
+    reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
     await update.message.reply_text("Choisis une option ou pose-moi une question trading :", reply_markup=reply_markup)
 
+# Gestion des messages
 async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.lower()
     chat_id = update.effective_chat.id
@@ -88,33 +86,24 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         audio_file = "lien.ogg"
         reply_text = f"Voici ton lien FXCess : {AFFILIATE_LINK_2}"
 
-    elif "vip forex" in text:
+    elif "vip" in text:
         audio_file = "vip.ogg"
-        reply_text = f"Félicitations pour ton accès VIP Forex ! Voici les liens :\n{AFFILIATE_LINK_1}\n{AFFILIATE_LINK_2}"
-
-    elif "vip crypto" in text:
-        audio_file = "vip.ogg"
-        reply_text = f"Félicitations pour ton accès VIP Crypto ! Voici ton lien Kucoin :\n{KUCOIN_LINK}"
-
-    elif "fait mon dépôt" in text or "j’ai fait mon dépôt" in text:
-        await update.message.reply_text("Merci ! Envoie-moi une capture d’écran de ton dépôt. Une fois reçu, je valide manuellement ton accès VIP. 🔒")
-        return
+        reply_text = "Envoie ta preuve ici pour débloquer l’accès selon ton dépôt."
 
     else:
-        try:
-            response = await deepseek_response(text)
-            await update.message.reply_text(response)
-        except Exception as e:
-            await update.message.reply_text("Une erreur est survenue lors de la génération de la réponse.")
+        # DeepSeek avec datas personnalisées
+        response = await deepseek_response(text)
+        await update.message.reply_text(response)
         return
 
     try:
-        audio = open(os.path.join(AUDIO_FOLDER, audio_file), "rb")
+        audio = open(AUDIO_FOLDER + audio_file, "rb")
         await context.bot.send_voice(chat_id=chat_id, voice=audio)
         await update.message.reply_text(reply_text)
     except FileNotFoundError:
         await update.message.reply_text(f"Erreur : {audio_file} non trouvé.")
 
+# Fonction principale pour Render (webhook)
 def main():
     port = int(os.environ.get('PORT', 8000))
     app = ApplicationBuilder().token(TOKEN).build()
@@ -129,7 +118,7 @@ def main():
         webhook_url=f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME')}/{TOKEN}"
     )
 
-    print("Bot lancé avec DeepSeek (light) et context vectoriel optimisé ✅")
+    print("Bot lancé avec DeepSeek et datas personnalisées ✅")
 
 if __name__ == '__main__':
     main()
