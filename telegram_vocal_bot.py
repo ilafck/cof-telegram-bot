@@ -1,23 +1,18 @@
 import os
 import requests
 import chromadb
-from sentence_transformers import SentenceTransformer
+from InstructorEmbedding import INSTRUCTOR
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-# Clés API via variables d'environnement
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY")
 
-# Liens d'affiliation
+AUDIO_FOLDER = os.path.join(os.getcwd(), "vocaux/")
 AFFILIATE_LINK_1 = "https://partners.raisefx.com/visit/?bta=163220&brand=raisefx"
 AFFILIATE_LINK_2 = "https://go.fxcess.com/visit/?bta=35772&brand=fxcess"
 KUCOIN_LINK = "https://www.kucoin.com/r/af/rP6K1J3"
 
-# Chemin des vocaux
-AUDIO_FOLDER = os.path.join(os.getcwd(), "vocaux/")
-
-# Configuration de la base de connaissances avec ChromaDB
 client_db = chromadb.PersistentClient(path="./data_db")
 from chromadb.utils import embedding_functions
 
@@ -27,49 +22,41 @@ try:
 except ValueError:
     collection = client_db.create_collection(
         name=collection_name,
-        embedding_function=embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
+        embedding_function=embedding_functions.InstructorEmbeddingFunction(
+            model_name="hkunlp/instructor-base",
+            instruction="Représente le texte pour la recherche d'information"
+        )
     )
 
-model = SentenceTransformer('all-MiniLM-L6-v2')
+model = INSTRUCTOR('hkunlp/instructor-base')
 
+# Fonction contextuelle DeepSeek avec base Chroma allégée
 def get_context(query):
-    query_embedding = model.encode([query]).tolist()[0]
-    results = collection.query(query_embeddings=[query_embedding], n_results=3)
+    query_embedding = model.encode([["Représente le texte pour la recherche d'information", query]])[0]
+    results = collection.query(query_embeddings=[query_embedding], n_results=2)
     return " ".join(results["documents"][0])
 
-# Fonction IA DeepSeek avec gestion d'erreurs
 async def deepseek_response(prompt):
     headers = {
         "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
         "Content-Type": "application/json"
     }
+    contexte_erwin = get_context(prompt)
+    system_prompt = f"""
+    Tu es un assistant trading institutionnel pour Erwin COF. Utilise ce contexte précis pour répondre clairement avec un ton convivial, engageant et direct :
+    {contexte_erwin}
+    """
+    data = {
+        "model": "deepseek-chat",
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}
+        ]
+    }
+    response = requests.post("https://api.deepseek.com/chat/completions", headers=headers, json=data, timeout=10)
+    response.raise_for_status()
+    return response.json()['choices'][0]['message']['content']
 
-    try:
-        contexte_erwin = get_context(prompt)
-        system_prompt = f"""
-        Tu es un assistant trading institutionnel pour Erwin COF. Utilise ce contexte précis pour répondre clairement avec un ton convivial, engageant et direct :
-        {contexte_erwin}
-        """
-
-        data = {
-            "model": "deepseek-chat",
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt}
-            ]
-        }
-
-        response = requests.post("https://api.deepseek.com/chat/completions", headers=headers, json=data, timeout=8)
-        response.raise_for_status()
-        return response.json()['choices'][0]['message']['content']
-
-    except requests.exceptions.Timeout:
-        return "⏳ Le serveur DeepSeek est un peu lent. Réessaie dans un instant."
-
-    except requests.exceptions.RequestException:
-        return "❌ L'assistant IA est momentanément indisponible. Pose une autre question ou réessaie plus tard."
-
-# Commande /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     try:
@@ -78,7 +65,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except FileNotFoundError:
         await update.message.reply_text("Erreur : intro.ogg non trouvé.")
         return
-
     keyboard = [
         ["🔗 Lien RaiseFX", "🔗 Lien FXCess"],
         ["💸 VIP Forex", "💰 VIP Crypto"],
@@ -87,7 +73,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=False, resize_keyboard=True)
     await update.message.reply_text("Choisis une option ou pose-moi une question trading :", reply_markup=reply_markup)
 
-# Handler principal
 async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.lower()
     chat_id = update.effective_chat.id
@@ -113,8 +98,11 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     else:
-        response = await deepseek_response(text)
-        await update.message.reply_text(response)
+        try:
+            response = await deepseek_response(text)
+            await update.message.reply_text(response)
+        except Exception as e:
+            await update.message.reply_text("Une erreur est survenue. Réessaie dans quelques instants.")
         return
 
     try:
@@ -124,7 +112,6 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except FileNotFoundError:
         await update.message.reply_text(f"Erreur : {audio_file} non trouvé.")
 
-# Lancement du bot
 def main():
     port = int(os.environ.get('PORT', 8000))
     app = ApplicationBuilder().token(TOKEN).build()
@@ -139,7 +126,7 @@ def main():
         webhook_url=f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME')}/{TOKEN}"
     )
 
-    print("Bot lancé avec DeepSeek, vocaux et fonctions VIP ✅")
+    print("Bot lancé avec DeepSeek (light) et context vectoriel optimisé ✅")
 
 if __name__ == '__main__':
     main()
